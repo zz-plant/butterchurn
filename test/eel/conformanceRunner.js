@@ -28,6 +28,16 @@ import {
 
 const POOL_NAME = 'conformance';
 
+/**
+ * Variables eel-wasm prepopulates when the pool does not supply them. The
+ * runner leaves these to the engine (declaring them in the pool would shadow
+ * the engine's own initialization) and reads their values back through probe
+ * statements. On eel-wasm 0.0.16 `pi` and `e` are not prepopulated, so they
+ * read as 0; once eel-wasm ships the prepopulation, these cases pass without
+ * changes here.
+ */
+const PREPOPULATED = new Set(['pi', 'e']);
+
 /** Matches identifiers that are not immediately called as functions. */
 const VAR_TOKEN = /[a-z_][a-z0-9_]*(?!\s*\()/gi;
 
@@ -78,17 +88,31 @@ function createRunner(specCase) {
   );
 
   return async ({ program, env, megabuf, gmegabuf, random }) => {
+    // Expected variables the engine prepopulates are read through probes so
+    // the engine's own initialization is what gets tested.
+    const probedExpected = expectedNames.filter(
+      (name) => PREPOPULATED.has(name) && !(name in env)
+    );
+    const pooledExpected = expectedNames.filter(
+      (name) => !probedExpected.includes(name)
+    );
+
     const statements = [
       ...preloadStatements('megabuf', megabuf),
       ...preloadStatements('gmegabuf', gmegabuf),
       ...program,
       ...probeStatements('megabuf', megabufSlots, 'mb'),
       ...probeStatements('gmegabuf', gmegabufSlots, 'gb'),
+      ...probedExpected.map((name) => `${probeName('exp', name)} = ${name}`),
     ];
 
     const pool = {};
     const declare = (name, value) => {
       const key = name.toLowerCase();
+      if (PREPOPULATED.has(key) && !(key in env)) {
+        // Leave prepopulated variables to the engine.
+        return;
+      }
       if (!(key in pool)) {
         pool[key] = f64Global(value);
       }
@@ -104,6 +128,7 @@ function createRunner(specCase) {
     }
     megabufSlots.forEach((_, i) => declare(probeName('mb', i), 0));
     gmegabufSlots.forEach((_, i) => declare(probeName('gb', i), 0));
+    probedExpected.forEach((name) => declare(probeName('exp', name), 0));
 
     const fixedShims = {
       ...shims,
@@ -129,8 +154,11 @@ function createRunner(specCase) {
     for (const [key] of Object.entries(env)) {
       env[key] = pool[key].value;
     }
-    for (const name of expectedNames) {
+    for (const name of pooledExpected) {
       env[name] = pool[name].value;
+    }
+    for (const name of probedExpected) {
+      env[name] = pool[probeName('exp', name)].value;
     }
     megabufSlots.forEach((slot, i) => {
       if (slot >= 0 && slot < EEL_CONFORMANCE_BUFFER_SLOTS) {
