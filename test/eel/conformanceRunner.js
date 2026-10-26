@@ -3,10 +3,11 @@
  * against eel-wasm, the engine Butterchurn uses to execute preset equations.
  *
  * Each case is compiled with eel-wasm's `compileModule` and instantiated with
- * eel-wasm's own shims, except `rand`, which the corpus replaces with a fixed
- * draw so the random cases are deterministic (see the eel-conformance runner
- * contract). This exercises the same compiler and runtime Butterchurn ships
- * with; only the random source differs from `loadModule`.
+ * eel-wasm's own shims, except `rand` and `randint`, which the corpus replaces
+ * with a fixed draw so the random cases are deterministic (see the
+ * eel-conformance runner contract). This exercises the same compiler and
+ * runtime Butterchurn ships with; only the random source differs from
+ * `loadModule`.
  *
  * eel-wasm keeps megabuf/gmegabuf inside unexported WebAssembly memory, so the
  * harness's Float32Array buffers cannot be wired directly. Instead the adapter:
@@ -29,12 +30,10 @@ import {
 const POOL_NAME = 'conformance';
 
 /**
- * Variables eel-wasm prepopulates when the pool does not supply them. The
- * runner leaves these to the engine (declaring them in the pool would shadow
- * the engine's own initialization) and reads their values back through probe
- * statements. On eel-wasm 0.0.16 `pi` and `e` are not prepopulated, so they
- * read as 0; once eel-wasm ships the prepopulation, these cases pass without
- * changes here.
+ * Variables the corpus expects to be prepopulated when the pool does not
+ * supply them. The runner leaves these to the engine (declaring them in the
+ * pool would shadow the engine's own initialization) and reads their values
+ * back through probe statements.
  */
 const PREPOPULATED = new Set(['pi', 'e']);
 
@@ -133,6 +132,7 @@ function createRunner(specCase) {
     const fixedShims = {
       ...shims,
       rand: (max) => random() * (max === undefined ? 1 : max),
+      randint: (max) => Math.floor(random() * (max === undefined ? 1 : max)),
     };
 
     const wasmBytes = compileModule({

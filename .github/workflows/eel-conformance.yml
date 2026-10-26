@@ -1,6 +1,9 @@
 name: EEL Conformance
 
 on:
+  push:
+    branches:
+      - master
   pull_request:
 
 jobs:
